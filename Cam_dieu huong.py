@@ -9,7 +9,9 @@ def detect_direction_and_speed(frame):
     roi = frame[int(height * 0.8):, :]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 150, 255, cv2.THRESH_BINARY_INV)
+
+    # Threshold để phát hiện vật cản (có thể điều chỉnh nếu cần)
+    _, thresh = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
 
     third = width // 3
     left = thresh[:, :third]
@@ -20,24 +22,23 @@ def detect_direction_and_speed(frame):
     center_score = np.sum(center == 255)
     right_score = np.sum(right == 255)
 
-    # Ngưỡng để coi vật cản là gần (có thể điều chỉnh 12000 -> 10000 tùy camera)
-    close_threshold = 10000
-
     print(f"Scores -> Left: {left_score}, Center: {center_score}, Right: {right_score}")
+
+    # Ngưỡng để coi vật cản là gần
+    close_threshold = 3000
+    margin = 500  # Độ chênh để quyết định rõ ràng trái/phải
 
     # Mặc định: đi thẳng
     direction = "STRAIGHT"
     steering_angle = 0
     speed = 70
 
-    # Chỉ xét rẽ khi có vật cản ở chính giữa và gần (tức là vật chắn đường phía trước)
     if center_score > close_threshold:
         speed = 30
-        # Nếu có vật cản ở giữa, chọn bên ít vật cản để rẽ
-        if left_score < right_score-200:
+        if left_score + margin < right_score:
             direction = "LEFT"
             steering_angle = -30
-        elif right_score < left_score-200:
+        elif right_score + margin < left_score:
             direction = "RIGHT"
             steering_angle = +30
         else:
