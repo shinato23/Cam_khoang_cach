@@ -20,7 +20,6 @@ def detect_direction_and_speed(frame):
     center_score = np.sum(center == 255)
     right_score = np.sum(right == 255)
 
-    # Ngưỡng để coi là có vật cản
     close_threshold = 1000
 
     print(f"Scores -> Left: {left_score}, Center: {center_score}, Right: {right_score}")
@@ -29,13 +28,6 @@ def detect_direction_and_speed(frame):
     direction = "STRAIGHT"
     steering_angle = 0
     speed = 70
-
-    # Trường hợp đặc biệt: vật cản ở cả 2 bên
-    if left_score > close_threshold and right_score > close_threshold:
-        direction = "REVERSE"
-        speed = -30
-        steering_angle = 0  # hoặc nhẹ trái/phải nếu cần
-        return direction, steering_angle, speed
 
     # Nếu có vật cản phía trước quá gần
     if center_score > close_threshold:
@@ -48,11 +40,7 @@ def detect_direction_and_speed(frame):
         else:
             direction = "STRAIGHT"
             steering_angle = 0
-        speed = 30
-    else:
-        direction = "STRAIGHT"
-        steering_angle = 0
-        speed = 70
+        speed = 30  # Giảm tốc độ khi gần vật
 
     return direction, steering_angle, speed
 
