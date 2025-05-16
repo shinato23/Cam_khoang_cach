@@ -17,11 +17,19 @@ def is_vertical_obstacle(region, min_height=15):
             vertical_lines += 1
     return vertical_lines
 
-def detect_direction_and_speed(frame):
+def process_frame_for_obstacles(frame):
     frame = cv2.resize(frame, (320, 240))
     height, width = frame.shape[:2]
+    roi = frame[int(height * 0.8):, :]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, thresh = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
+    return thresh
 
-    roi = frame[int(height * 0.8):, :]  # Lấy vùng ROI gần robot
+def detect_direction_and_speed(frame, hold_direction=None):
+    frame = cv2.resize(frame, (320, 240))
+    height, width = frame.shape[:2]
+    roi = frame[int(height * 0.8):, :]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, thresh = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
@@ -44,7 +52,10 @@ def detect_direction_and_speed(frame):
     steering_angle = 0
     speed = 70
 
-    if center_score > close_threshold:
+    if hold_direction is not None:
+        direction = hold_direction
+        speed = 30
+    elif center_score > close_threshold:
         speed = 30
         if right_score > left_score + margin:
             direction = "RIGHT"
@@ -59,26 +70,69 @@ def detect_direction_and_speed(frame):
 
 def send_command_to_serial(direction):
     if direction == "LEFT":
-        ser.write(b'L')
+        ser.write(bytes([0x02]))
     elif direction == "RIGHT":
-        ser.write(b'R')
+        ser.write(bytes([0x03]))
     elif direction == "STRAIGHT":
-        ser.write(b'F')
+        ser.write(bytes([0x01]))
     elif direction == "BACK":
-        ser.write(b'B')
+        ser.write(bytes([0x04]))
 
 # Thiết lập Serial
-ser = serial.Serial('COM3', 9600, timeout=1)
+ser = serial.Serial('/dev/ttyUSB0', 152000, timeout=1)
 time.sleep(2)
 
 cap = cv2.VideoCapture(0)
+time.sleep(2)
+
+# 🚗 Quét ban đầu trái phải
+print("Scanning left...")
+send_command_to_serial("LEFT")
+time.sleep(1)
+ret, frame = cap.read()
+left_thresh = process_frame_for_obstacles(frame)
+left_score = is_vertical_obstacle(left_thresh[:, :left_thresh.shape[1]//2])
+
+print("Scanning right...")
+send_command_to_serial("RIGHT")
+time.sleep(1)
+ret, frame = cap.read()
+right_thresh = process_frame_for_obstacles(frame)
+right_score = is_vertical_obstacle(right_thresh[:, right_thresh.shape[1]//2:])
+
+# 🔁 Trở lại trạng thái thẳng để bắt đầu
+send_command_to_serial("STRAIGHT")
+time.sleep(0.5)
+
+# 🧠 Chọn hướng ưu tiên ban đầu
+preferred_direction = "STRAIGHT"
+if left_score < right_score:
+    preferred_direction = "LEFT"
+elif right_score < left_score:
+    preferred_direction = "RIGHT"
+print(f"Preferred start direction: {preferred_direction}")
+
+# ✅ Vòng lặp chính
+hold_start_time = None
+hold_duration = 1.0
+current_hold = None
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    direction, angle, speed, thresh = detect_direction_and_speed(frame)
+    # Kiểm tra giữ hướng
+    if current_hold and (time.time() - hold_start_time < hold_duration):
+        direction, angle, speed, thresh = detect_direction_and_speed(frame, hold_direction=current_hold)
+    else:
+        direction, angle, speed, thresh = detect_direction_and_speed(frame)
+        if direction in ["LEFT", "RIGHT"]:
+            current_hold = direction
+            hold_start_time = time.time()
+        else:
+            current_hold = None
+
     send_command_to_serial(direction)
 
     # Hiển thị kết quả
